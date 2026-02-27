@@ -127,10 +127,17 @@ def get_access_token() -> str:
 
     if resp.status_code != 200:
         raise RuntimeError(
-            f"Token request failed ({resp.status_code}): {resp.text[:300]}"
+            f"Token request failed ({resp.status_code}): {resp.text[:500]}"
         )
 
-    data = resp.json()
+    try:
+        data = resp.json()
+    except Exception:
+        raise RuntimeError(
+            f"Token endpoint returned non-JSON ({resp.status_code}). "
+            f"This usually means the client_credentials grant is not enabled on your "
+            f"Brightspace instance. Raw response: {resp.text[:300]}"
+        )
     st.session_state["oauth_token"]      = data["access_token"]
     st.session_state["oauth_expires_at"] = now + data.get("expires_in", 3600)
     return data["access_token"]
@@ -178,7 +185,14 @@ def fetch_content_topics(org_unit_id: str, token: str) -> list[dict]:
     }
 
     resp = api_get(f"/{org_unit_id}/content/toc", token)
-    toc  = resp.json()
+    try:
+        toc = resp.json()
+    except Exception:
+        raise RuntimeError(
+            f"Content TOC returned non-JSON ({resp.status_code}). "
+            f"Check that org_unit_id {org_unit_id} exists and the OAuth scopes are correct. "
+            f"Raw response: {resp.text[:300]}"
+        )
 
     topics = []
 
