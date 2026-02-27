@@ -1,11 +1,6 @@
 import streamlit as st
-import requests
 import hashlib
-import time
-import os
-import tempfile
 from pathlib import Path
-from urllib.parse import urlencode, urlparse, parse_qs
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -38,7 +33,13 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     margin: 0 0 0.3rem;
     letter-spacing: -0.02em;
 }
-.hero .subtitle { font-size: 0.82rem; color: #6b7694; font-weight: 300; letter-spacing: 0.04em; text-transform: uppercase; }
+.hero .subtitle {
+    font-size: 0.82rem;
+    color: #6b7694;
+    font-weight: 300;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
 .hero .badge {
     display: inline-block;
     background: #1a2540;
@@ -85,188 +86,84 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     margin-bottom: 0.75rem;
     letter-spacing: 0.03em;
 }
-.status-dot { display: inline-block; width: 6px; height: 6px; background: #2d8a4e; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.status-dot  { display: inline-block; width: 6px; height: 6px; background: #2d8a4e; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
 .status-warn { display: inline-block; width: 6px; height: 6px; background: #c8922a; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
 
-.stChatInputContainer { background: #161b2e !important; border: 1px solid #1e2744 !important; border-radius: 12px !important; }
-.stChatInputContainer textarea { color: #cdd5e8 !important; font-family: 'DM Sans', sans-serif !important; font-size: 0.88rem !important; }
+.stChatInputContainer {
+    background: #161b2e !important;
+    border: 1px solid #1e2744 !important;
+    border-radius: 12px !important;
+}
+.stChatInputContainer textarea {
+    color: #cdd5e8 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 0.88rem !important;
+}
 .stSpinner > div { border-top-color: #3a6bc4 !important; }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# BRIGHTSPACE OAUTH + API HELPERS
+# CONTENT LOADING
 # ══════════════════════════════════════════════════════════════════════════════
 
-INSTANCE_URL  = "https://nbcctest.brightspace.com"
-CLIENT_ID     = "2b9cbd14-1e83-4c45-beee-ac2d7f71ef84"
-TOKEN_URL     = f"{INSTANCE_URL}/d2l/auth/api/token"
-API_BASE      = f"{INSTANCE_URL}/d2l/api/le/1.67"
+CONTENT_ROOT = Path(__file__).parent / "content"
+SUPPORTED    = {".txt", ".html", ".htm", ".pdf", ".docx"}
 
 
-def get_access_token() -> str:
-    """
-    Exchange client credentials for a Bearer token using the OAuth 2.0
-    client_credentials grant. Token is cached in session state and
-    refreshed automatically when it expires.
-    """
-    now = time.time()
-    if (
-        "oauth_token" in st.session_state
-        and st.session_state.get("oauth_expires_at", 0) > now + 60
-    ):
-        return st.session_state["oauth_token"]
-
-    resp = requests.post(TOKEN_URL, data={
-        "grant_type":    "client_credentials",
-        "client_id":     CLIENT_ID,
-        "client_secret": st.secrets["BS_CLIENT_SECRET"],
-        "scope":         "content:file:read content:modules:read content:topics:read",
-    }, timeout=15)
-
-    if resp.status_code != 200:
-        raise RuntimeError(
-            f"Token request failed ({resp.status_code}): {resp.text[:500]}"
-        )
-
+def extract_text(filepath: Path) -> str | None:
+    """Extract plain text from a supported file type."""
+    ext = filepath.suffix.lower()
     try:
-        data = resp.json()
-    except Exception:
-        raise RuntimeError(
-            f"Token endpoint returned non-JSON ({resp.status_code}). "
-            f"This usually means the client_credentials grant is not enabled on your "
-            f"Brightspace instance. Raw response: {resp.text[:300]}"
-        )
-    st.session_state["oauth_token"]      = data["access_token"]
-    st.session_state["oauth_expires_at"] = now + data.get("expires_in", 3600)
-    return data["access_token"]
-
-
-def api_get(path: str, token: str, stream: bool = False):
-    """GET from the Brightspace LE API with Bearer auth."""
-    resp = requests.get(
-        f"{API_BASE}{path}",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=30,
-        stream=stream,
-    )
-    if resp.status_code == 401:
-        # Force token refresh on next call
-        st.session_state.pop("oauth_token", None)
-        raise RuntimeError("Brightspace token expired mid-session — please reload.")
-    resp.raise_for_status()
-    return resp
-
-
-def fetch_course_name(org_unit_id: str, token: str) -> str:
-    """Get the course name from the org units API."""
-    try:
-        resp = requests.get(
-            f"{INSTANCE_URL}/d2l/api/lp/1.9/orgstructure/{org_unit_id}",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=15,
-        )
-        if resp.ok:
-            return resp.json().get("Name", f"Course {org_unit_id}")
-    except Exception:
-        pass
-    return f"Course {org_unit_id}"
-
-
-def fetch_content_topics(org_unit_id: str, token: str) -> list[dict]:
-    """
-    Walk the course table of contents and return all file-type topics,
-    excluding assessments (quizzes, dropbox, checklist, survey).
-    """
-    EXCLUDED_TYPES = {
-        "quiz", "dropbox", "checklist", "survey",
-        "selfassess", "scorm", "lti",
-    }
-
-    resp = api_get(f"/{org_unit_id}/content/toc", token)
-    try:
-        toc = resp.json()
-    except Exception:
-        raise RuntimeError(
-            f"Content TOC returned non-JSON ({resp.status_code}). "
-            f"Check that org_unit_id {org_unit_id} exists and the OAuth scopes are correct. "
-            f"Raw response: {resp.text[:300]}"
-        )
-
-    topics = []
-
-    def walk(modules):
-        for mod in modules:
-            for topic in mod.get("Topics", []):
-                t_type = (topic.get("TypeIdentifier") or "").lower()
-                if t_type in EXCLUDED_TYPES:
-                    continue
-                # Only include file/document-type topics
-                if topic.get("TopicType") in (1,):   # 1 = File
-                    topics.append({
-                        "id":    topic["Id"],
-                        "title": topic.get("Title", f"Topic {topic['Id']}"),
-                    })
-            walk(mod.get("Modules", []))
-
-    walk(toc.get("Modules", []))
-    return topics
-
-
-def download_topic_text(org_unit_id: str, topic_id: int, token: str) -> str | None:
-    """
-    Download a topic file and extract its text.
-    Supports: .txt, .html/.htm, .pdf, .docx
-    Returns None if the file type is unsupported or download fails.
-    """
-    try:
-        resp = api_get(f"/{org_unit_id}/content/topics/{topic_id}/file", token, stream=True)
-        content_type = resp.headers.get("Content-Type", "")
-        content_disp = resp.headers.get("Content-Disposition", "")
-
-        # Determine extension
-        ext = ""
-        if "filename=" in content_disp:
-            fname = content_disp.split("filename=")[-1].strip().strip('"')
-            ext   = Path(fname).suffix.lower()
-        elif "html" in content_type:
-            ext = ".html"
-        elif "pdf" in content_type:
-            ext = ".pdf"
-        elif "plain" in content_type:
-            ext = ".txt"
-
-        raw = resp.content
-
-        if ext in (".txt",):
-            return raw.decode("utf-8", errors="ignore")
+        if ext == ".txt":
+            return filepath.read_text(encoding="utf-8", errors="ignore")
 
         elif ext in (".html", ".htm"):
             from bs4 import BeautifulSoup
-            return BeautifulSoup(raw, "html.parser").get_text(separator="\n")
+            return BeautifulSoup(filepath.read_bytes(), "html.parser").get_text(separator="\n")
 
         elif ext == ".pdf":
             import io
             import pypdf
-            reader = pypdf.PdfReader(io.BytesIO(raw))
+            reader = pypdf.PdfReader(str(filepath))
             return "\n".join(p.extract_text() or "" for p in reader.pages)
 
         elif ext == ".docx":
-            import io
             import docx
-            doc = docx.Document(io.BytesIO(raw))
+            doc = docx.Document(str(filepath))
             return "\n".join(p.text for p in doc.paragraphs)
 
-        else:
-            # Fallback: try to decode as text
-            try:
-                return raw.decode("utf-8", errors="ignore")
-            except Exception:
-                return None
+    except Exception as e:
+        st.warning(f"Could not read {filepath.name}: {e}")
+    return None
 
-    except Exception:
-        return None
+
+def load_course_content(course_id: str) -> tuple[list[dict], str]:
+    """
+    Load all content files from content/<course_id>/.
+    Returns (list of {title, text} dicts, content hash).
+    """
+    course_dir = CONTENT_ROOT / course_id
+    if not course_dir.exists():
+        raise FileNotFoundError(
+            f"No content folder found for course '{course_id}'. "
+            f"Create the folder content/{course_id}/ and upload your course files."
+        )
+
+    docs = []
+    for filepath in sorted(course_dir.iterdir()):
+        if filepath.suffix.lower() not in SUPPORTED:
+            continue
+        text = extract_text(filepath)
+        if text and text.strip():
+            docs.append({"title": filepath.stem, "text": text.strip()})
+
+    content_hash = hashlib.md5(
+        "".join(d["text"] for d in docs).encode()
+    ).hexdigest()
+
+    return docs, content_hash
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -274,10 +171,10 @@ def download_topic_text(org_unit_id: str, topic_id: int, token: str) -> str | No
 # ══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_resource(show_spinner=False)
-def build_pipeline(org_unit_id: str, content_hash: str):
+def build_pipeline(course_id: str, content_hash: str):
     """
-    Build the RAG pipeline for a given course.
-    Keyed by org_unit_id + content_hash so it rebuilds only when content changes.
+    Build RAG pipeline for a course. Cached by (course_id, content_hash)
+    so it only rebuilds when files actually change.
     """
     from langchain_text_splitters import RecursiveCharacterTextSplitter
     from langchain_huggingface import HuggingFaceEmbeddings
@@ -288,16 +185,13 @@ def build_pipeline(org_unit_id: str, content_hash: str):
     from langchain_core.runnables import RunnablePassthrough
     from langchain.schema import Document
 
-    # The raw texts are passed in via session state (fetched before this call)
     raw_docs = st.session_state.get("raw_docs", [])
     if not raw_docs:
-        raise ValueError("No course content could be retrieved from Brightspace.")
+        raise ValueError("No content loaded — cannot build pipeline.")
 
-    # Build LangChain Documents
     documents = [
         Document(page_content=d["text"], metadata={"title": d["title"]})
         for d in raw_docs
-        if d.get("text")
     ]
 
     splitter = RecursiveCharacterTextSplitter(
@@ -338,7 +232,8 @@ Answer:"""
 
     def format_docs(docs):
         return "\n\n".join(
-            f"[{d.metadata.get('title','Untitled')}]\n{d.page_content}" for d in docs
+            f"[{d.metadata.get('title', 'Untitled')}]\n{d.page_content}"
+            for d in docs
         )
 
     chain = (
@@ -351,29 +246,6 @@ Answer:"""
     return chain, retriever
 
 
-def fetch_and_cache_content(org_unit_id: str) -> str:
-    """
-    Fetch all course content via API, cache in session state.
-    Returns a hash string used to key the pipeline cache.
-    """
-    token  = get_access_token()
-    topics = fetch_content_topics(org_unit_id, token)
-
-    raw_docs = []
-    for topic in topics:
-        text = download_topic_text(org_unit_id, topic["id"], token)
-        if text and text.strip():
-            raw_docs.append({"title": topic["title"], "text": text.strip()})
-
-    st.session_state["raw_docs"]    = raw_docs
-    st.session_state["course_name"] = fetch_course_name(org_unit_id, token)
-    st.session_state["topic_count"] = len(raw_docs)
-
-    # Hash the content so pipeline rebuilds only when files change
-    combined = "".join(d["text"] for d in raw_docs)
-    return hashlib.md5(combined.encode()).hexdigest()
-
-
 def ask(chain_and_retriever, question: str) -> tuple[str, list]:
     chain, retriever = chain_and_retriever
     answer  = chain.invoke(question).strip()
@@ -382,11 +254,23 @@ def ask(chain_and_retriever, question: str) -> tuple[str, list]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# COURSE ID FROM URL PARAMS
+# COURSE ID + COURSE NAME
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Read course_id from URL param; fall back to listing available courses
 params      = st.query_params
-org_unit_id = params.get("course_id", "297671")   # default to demo course
+course_id   = params.get("course_id", "").strip()
+
+# Derive a display name from the folder name or a names.txt mapping
+def get_course_name(course_id: str) -> str:
+    names_file = CONTENT_ROOT / "course_names.txt"
+    if names_file.exists():
+        for line in names_file.read_text().splitlines():
+            if "=" in line:
+                cid, name = line.split("=", 1)
+                if cid.strip() == course_id:
+                    return name.strip()
+    return f"Course {course_id}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -395,64 +279,94 @@ org_unit_id = params.get("course_id", "297671")   # default to demo course
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "last_course_id" not in st.session_state:
+    st.session_state.last_course_id = None
 if "pipeline_ready" not in st.session_state:
     st.session_state.pipeline_ready = False
-if "last_org_unit" not in st.session_state:
-    st.session_state.last_org_unit = None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HERO
 # ══════════════════════════════════════════════════════════════════════════════
 
-course_display = st.session_state.get("course_name", f"Course {org_unit_id}")
+course_name = st.session_state.get("course_name", get_course_name(course_id))
 st.markdown(f"""
 <div class="hero">
     <h1>📚 Course Assistant</h1>
-    <div class="subtitle">{course_display}</div>
-    <div class="badge">Powered by Gemini · Brightspace RAG</div>
+    <div class="subtitle">{course_name}</div>
+    <div class="badge">Powered by Gemini · Course Content RAG</div>
 </div>
 """, unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# VALIDATE COURSE ID
+# ══════════════════════════════════════════════════════════════════════════════
+
+if not course_id:
+    # Show available courses if no course_id provided
+    available = [
+        d.name for d in CONTENT_ROOT.iterdir()
+        if d.is_dir() and any(f.suffix.lower() in SUPPORTED for f in d.iterdir())
+    ] if CONTENT_ROOT.exists() else []
+
+    st.error("No course specified in the URL.")
+    if available:
+        st.info(f"Available courses: {', '.join(available)}\n\nAdd `?course_id=COURSE_ID` to the URL.")
+    else:
+        st.info("No course content folders found. Create `content/COURSE_ID/` and upload files.")
+    st.stop()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # BUILD / REFRESH PIPELINE
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Rebuild if course changed or not yet built
 needs_build = (
     not st.session_state.pipeline_ready
-    or st.session_state.last_org_unit != org_unit_id
+    or st.session_state.last_course_id != course_id
 )
 
 if needs_build:
-    with st.spinner("Connecting to Brightspace and indexing course content…"):
+    with st.spinner("Loading course content…"):
         try:
-            content_hash = fetch_and_cache_content(org_unit_id)
-            pipeline     = build_pipeline(org_unit_id, content_hash)
+            raw_docs, content_hash = load_course_content(course_id)
+            if not raw_docs:
+                st.warning(
+                    f"No readable files found in content/{course_id}/. "
+                    f"Upload .pdf, .docx, .txt, or .html files to that folder."
+                )
+                st.stop()
+
+            st.session_state["raw_docs"]    = raw_docs
+            st.session_state["course_name"] = get_course_name(course_id)
+            st.session_state["file_count"]  = len(raw_docs)
+
+        except FileNotFoundError as e:
+            st.error(f"⚠️ {e}")
+            st.stop()
+        except Exception as e:
+            st.error(f"⚠️ Could not load content: {e}")
+            st.stop()
+
+    with st.spinner("Building knowledge base…"):
+        try:
+            pipeline = build_pipeline(course_id, content_hash)
             st.session_state["pipeline"]      = pipeline
             st.session_state["pipeline_ready"] = True
-            st.session_state["last_org_unit"]  = org_unit_id
-            st.session_state.messages          = []   # clear chat on course switch
+            st.session_state["last_course_id"] = course_id
+            st.session_state.messages          = []
         except Exception as e:
             st.error(f"⚠️ Could not build pipeline: {e}")
             st.stop()
 
-topic_count = st.session_state.get("topic_count", 0)
-if topic_count > 0:
-    st.markdown(f"""
-    <div class="status-bar">
-        <span class="status-dot"></span>
-        {topic_count} content file{"s" if topic_count != 1 else ""} indexed from Brightspace
-    </div>
-    """, unsafe_allow_html=True)
-else:
-    st.markdown("""
-    <div class="status-bar">
-        <span class="status-warn"></span>
-        No content files found in this course — add files in Brightspace first
-    </div>
-    """, unsafe_allow_html=True)
+file_count = st.session_state.get("file_count", 0)
+st.markdown(f"""
+<div class="status-bar">
+    <span class="status-dot"></span>
+    {file_count} file{"s" if file_count != 1 else ""} indexed
+</div>
+""", unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -484,7 +398,7 @@ if question := st.chat_input("Ask a question about this course…"):
                 answer, sources = ask(st.session_state["pipeline"], question)
                 source_label = None
                 if sources:
-                    title = sources[0].metadata.get("title", "Course material")
+                    title   = sources[0].metadata.get("title", "Course material")
                     snippet = sources[0].page_content[:80].replace("\n", " ").strip()
                     source_label = f"{title} — {snippet}…"
             except Exception as e:

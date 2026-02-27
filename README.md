@@ -1,108 +1,94 @@
-# 📚 Brightspace Course Assistant — RAG Chatbot
+# 📚 Brightspace Course Assistant
 
-A RAG chatbot that connects live to Brightspace via the LE API, indexes course content files automatically, and answers student questions grounded in that content. Embedded as an iframe inside a Brightspace Content topic.
+A RAG chatbot embedded in Brightspace as a Content topic iframe. Each course has its own folder of uploaded content files — no authentication required, works for all students.
 
 ---
 
-## Architecture
+## How It Works
 
 ```
-Brightspace Course (iframe in Content topic)
-        │
-        ▼
-Streamlit App  ──► Brightspace LE API  ──► fetch content files
-        │                                        │
-        │          chunk → embed (MiniLM) → ChromaDB
-        │
-        └──► Gemini 2.5 Flash  ──► grounded answer
+content/
+├── course_names.txt          ← maps course IDs to display names
+├── 297671/                   ← one folder per course (named by org unit ID)
+│   ├── syllabus.pdf
+│   ├── week1_notes.docx
+│   └── policy.txt
+└── 123456/
+    └── ...
 ```
 
-- **One app, many courses** — the course is identified by `?course_id=` in the URL
-- **Auto-refresh** — content is re-indexed when the course ID changes
-- **No assessment access** — quizzes, dropbox, surveys are explicitly excluded
+When a student opens the chatbot iframe, the app:
+1. Reads the `?course_id=` URL parameter
+2. Loads all files from `content/<course_id>/`
+3. Chunks, embeds, and indexes them into ChromaDB
+4. Answers questions grounded in that content only
 
 ---
 
 ## Setup
 
-### 1. Create a new GitHub repo and push these files
+### 1. Create a GitHub repo and push all files
 
 ```
 brightspace-chatbot/
 ├── app.py
 ├── requirements.txt
 ├── .gitignore
+├── content/
+│   ├── course_names.txt
+│   └── 297671/
+│       └── (your course files go here)
 └── .streamlit/
     ├── config.toml
-    └── secrets.toml.template    ← safe to commit; actual secrets.toml is gitignored
+    └── secrets.toml.template
 ```
 
-### 2. Deploy to Streamlit Community Cloud
+### 2. Add course content files
+
+For each course:
+1. Export content from Brightspace (PDFs, Word docs, HTML pages, text files)
+2. Create a folder `content/<org_unit_id>/`
+3. Upload your files into that folder
+4. Add a line to `content/course_names.txt`:
+   ```
+   297671 = Data Management and Analytics — ITEC 3310
+   ```
+
+### 3. Deploy to Streamlit Community Cloud
 
 1. Go to share.streamlit.io → **New app**
 2. Point to your repo, branch `main`, file `app.py`
 3. Click **Advanced settings → Secrets** and paste:
+   ```toml
+   GOOGLE_API_KEY = "AIza-your-google-key-here"
+   ```
+4. Deploy — note your app URL
 
-```toml
-GOOGLE_API_KEY   = "AIza-your-google-key-here"
-BS_CLIENT_SECRET = "your-brightspace-client-secret-here"
-```
+### 4. Embed in Brightspace
 
-4. Click **Deploy**. Note your app URL — e.g.:
-   `https://YOUR_USERNAME-brightspace-chatbot-app-XXXX.streamlit.app`
-
----
-
-## Embedding in Brightspace
-
-Each course gets its own embed URL — just change the `course_id` parameter.
-
-### Step 1 — Find the course org unit ID
-Open the course in Brightspace. The URL will contain something like `/d2l/home/297671` — `297671` is the org unit ID.
-
-### Step 2 — Build the embed URL
-```
-https://YOUR-APP-URL.streamlit.app/?course_id=297671
-```
-
-### Step 3 — Add to Brightspace as a Content topic
-
-1. Open the course → **Content**
-2. Navigate to the module where you want the chatbot
-3. Click **New** → **Create a File** (or **Upload / Create → Create a File**)
-4. Title it: `Course Assistant`
-5. Switch the editor to **HTML source** (the `<>` button)
-6. Paste this iframe code — replace the URL with your actual app URL:
+For each course, create a Content topic with this HTML:
 
 ```html
 <iframe
-  src="https://YOUR-APP-URL.streamlit.app/?course_id=297671"
+  src="https://YOUR-APP-URL.streamlit.app/?course_id=297671&embed=true"
   width="100%"
   height="700"
   frameborder="0"
-  allow="clipboard-write"
-  style="border-radius: 12px; border: 1px solid #2a3a60;">
+  style="border-radius: 12px;">
 </iframe>
 ```
 
-7. Save and publish the topic
-
-### Step 4 — Repeat for each course
-For each new course, create a new Content topic using the same iframe HTML but with the correct `course_id`:
-```
-?course_id=123456   ← change this for each course
-```
+Change `course_id=` to match the org unit ID of each course.
 
 ---
 
-## Brightspace OAuth App Settings
+## Adding a New Course
 
-| Setting | Value |
-|---|---|
-| Client ID | `2b9cbd14-1e83-4c45-beee-ac2d7f71ef84` |
-| Instance | `https://nbcctest.brightspace.com` |
-| Scopes | `content:file:read content:modules:read content:topics:read` |
-| Grant type | Client Credentials |
+1. Create folder `content/<new_course_id>/`
+2. Upload content files into it
+3. Add a line to `content/course_names.txt`
+4. Commit and push to GitHub — Streamlit redeploys automatically
+5. Create a new Content topic in the new Brightspace course with the correct `course_id` in the iframe URL
 
 ---
 
@@ -110,22 +96,21 @@ For each new course, create a new Content topic using the same iframe HTML but w
 
 | Format | Supported |
 |---|---|
-| `.txt` | ✅ |
-| `.html` / `.htm` | ✅ |
 | `.pdf` | ✅ |
 | `.docx` | ✅ |
-| Other | ⚠️ Attempted as plain text |
-| Quizzes / Dropbox / Surveys | ❌ Excluded by design |
+| `.txt` | ✅ |
+| `.html` / `.htm` | ✅ |
+| Other | Ignored |
 
 ---
 
-## Secrets Reference
+## Updating Course Content
 
-| Secret key | Where to get it |
-|---|---|
-| `GOOGLE_API_KEY` | aistudio.google.com → Get API key |
-| `BS_CLIENT_SECRET` | Brightspace Admin → Manage Extensibility → OAuth 2.0 → your app |
+When course materials change:
+1. Replace or add files in `content/<course_id>/`
+2. Commit and push
+3. Streamlit redeploys — the pipeline rebuilds automatically on next load
 
 ---
 
-*Built for NBCC — Brightspace RAG Integration · 2026*
+*Built for NBCC · 2026*

@@ -1,0 +1,17 @@
+# Secrets — NEVER commit
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+.env
+venv/
+.venv/
+
+# ChromaDB
+chroma_db/
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
