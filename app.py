@@ -183,7 +183,7 @@ def build_pipeline(course_id: str, content_hash: str):
     from langchain_core.prompts import ChatPromptTemplate
     from langchain_core.output_parsers import StrOutputParser
     from langchain_core.runnables import RunnablePassthrough
-    from langchain.schema import Document
+    from langchain_core.documents import Document
 
     raw_docs = st.session_state.get("raw_docs", [])
     if not raw_docs:
