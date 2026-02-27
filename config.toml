@@ -9,7 +9,12 @@ font = "sans serif"
 [server]
 headless = true
 enableCORS = false
+enableXsrfProtection = false
 
-# Allow the app to be embedded in Brightspace iframes
+# Required to allow embedding in Brightspace iframes
 [browser]
 gatherUsageStats = false
+
+[client]
+showErrorDetails = false
+toolbarMode = "minimal"
