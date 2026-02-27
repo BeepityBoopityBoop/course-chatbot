@@ -1,0 +1,15 @@
+[theme]
+base = "dark"
+backgroundColor = "#0f1117"
+secondaryBackgroundColor = "#161b2e"
+primaryColor = "#3a6bc4"
+textColor = "#cdd5e8"
+font = "sans serif"
+
+[server]
+headless = true
+enableCORS = false
+
+# Allow the app to be embedded in Brightspace iframes
+[browser]
+gatherUsageStats = false
