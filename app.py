@@ -112,6 +112,17 @@ div[class*="_container_1upux_1"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
+# Inject toolbar-hiding CSS at root level via st.components (bypasses Streamlit scoping)
+import streamlit.components.v1 as components
+components.html("""
+<style>
+  ._container_1upux_1 {
+    display: none !important;
+  }
+</style>
+""", height=0)
+
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONTENT LOADING
