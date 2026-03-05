@@ -18,7 +18,6 @@ st.markdown("""
 html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .stApp { background: #0f1117; }
 #MainMenu, footer, header { visibility: hidden; }
-
 .block-container { padding-top: 1.5rem; padding-bottom: 1rem; max-width: 780px; }
 
 .hero {
@@ -103,8 +102,6 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .stSpinner > div { border-top-color: #3a6bc4 !important; }
 </style>
 """, unsafe_allow_html=True)
-
-
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -320,28 +317,9 @@ course_name = st.session_state.get("course_name", get_course_name(course_id))
 st.markdown(f"""
 <div class="hero">
     <h1>📚 Course Assistant</h1>
-    <div class="subtitle">{course_name}</div>
-    <div class="badge">Powered by Groq · Course Content RAG</div>
+    <div class="badge">HORT 2210 — Fundamentals of Horticulture</div>
 </div>
 """, unsafe_allow_html=True)
-
-# Hide Streamlit bottom toolbar — targets the element by its generated class name
-import streamlit.components.v1 as components
-components.html('''
-<script>
-(function() {
-  function hide() {
-    var el = document.querySelector('._container_1upux_1');
-    if (el) { el.style.cssText = 'display:none!important'; return true; }
-    return false;
-  }
-  if (!hide()) {
-    var obs = new MutationObserver(function() { if (hide()) obs.disconnect(); });
-    obs.observe(document.body, { childList: true, subtree: true });
-  }
-})();
-</script>
-''', height=0, scrolling=False)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
