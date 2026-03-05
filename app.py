@@ -112,20 +112,6 @@ div[class*="_container_1upux_1"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# Use MutationObserver to remove the toolbar as soon as it appears in the DOM
-import streamlit.components.v1 as components
-components.html("""
-<script>
-const observer = new MutationObserver(() => {
-    const toolbar = window.parent.document.querySelector('._container_1upux_1');
-    if (toolbar) {
-        toolbar.remove();
-        observer.disconnect();
-    }
-});
-observer.observe(window.parent.document.body, { childList: true, subtree: true });
-</script>
-""", height=0)
 
 
 
