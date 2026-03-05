@@ -26,6 +26,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .stDeployButton,
 div[class*="viewerBadge"],
 div[class*="toolbar"] { display: none !important; visibility: hidden !important; height: 0 !important; }
+div[class*="_container_1upux_1"] { display: none !important; }
 .block-container { padding-top: 1.5rem; padding-bottom: 1rem; max-width: 780px; }
 
 .hero {
