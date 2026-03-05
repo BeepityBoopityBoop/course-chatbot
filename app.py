@@ -18,6 +18,14 @@ st.markdown("""
 html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .stApp { background: #0f1117; }
 #MainMenu, footer, header { visibility: hidden; }
+
+/* Hide bottom toolbar ("Built with Streamlit" + fullscreen button) */
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"],
+.stDeployButton,
+div[class*="viewerBadge"],
+div[class*="toolbar"] { display: none !important; visibility: hidden !important; height: 0 !important; }
 .block-container { padding-top: 1.5rem; padding-bottom: 1rem; max-width: 780px; }
 
 .hero {
@@ -317,7 +325,8 @@ course_name = st.session_state.get("course_name", get_course_name(course_id))
 st.markdown(f"""
 <div class="hero">
     <h1>📚 Course Assistant</h1>
-    <div class="badge">HORT 2210 — Fundamentals of Horticulture</div>
+    <div class="subtitle">{course_name}</div>
+    <div class="badge">Powered by Groq · Course Content RAG</div>
 </div>
 """, unsafe_allow_html=True)
 
