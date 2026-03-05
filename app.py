@@ -317,8 +317,7 @@ course_name = st.session_state.get("course_name", get_course_name(course_id))
 st.markdown(f"""
 <div class="hero">
     <h1>📚 Course Assistant</h1>
-    <div class="subtitle">{course_name}</div>
-    <div class="badge">Powered by Groq · Course Content RAG</div>
+    <div class="badge">HORT 2210 — Fundamentals of Horticulture</div>
 </div>
 """, unsafe_allow_html=True)
 
