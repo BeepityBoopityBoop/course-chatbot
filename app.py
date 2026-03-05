@@ -179,7 +179,7 @@ def build_pipeline(course_id: str, content_hash: str):
     from langchain_text_splitters import RecursiveCharacterTextSplitter
     from langchain_huggingface import HuggingFaceEmbeddings
     from langchain_chroma import Chroma
-    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain_groq import ChatGroq
     from langchain_core.prompts import ChatPromptTemplate
     from langchain_core.output_parsers import StrOutputParser
     from langchain_core.runnables import RunnablePassthrough
@@ -207,10 +207,10 @@ def build_pipeline(course_id: str, content_hash: str):
     vectorstore = Chroma.from_documents(chunks, embeddings)
     retriever   = vectorstore.as_retriever(search_kwargs={"k": 4})
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=st.secrets["GOOGLE_API_KEY"],
-        max_output_tokens=1024,
+    llm = ChatGroq(
+        model="llama-3.3-70b-versatile",
+        api_key=st.secrets["GROQ_API_KEY"],
+        max_tokens=1024,
     )
 
     course_name = st.session_state.get("course_name", "this course")
@@ -317,8 +317,8 @@ course_name = st.session_state.get("course_name", get_course_name(course_id))
 st.markdown(f"""
 <div class="hero">
     <h1>📚 Course Assistant</h1>
-    <div class="subtitle">HORT 2210 — Fundamentals of Horticulture</div>
-    <div class="badge">Powered by Gemini · Course Content RAG</div>
+    <div class="subtitle">{course_name}</div>
+    <div class="badge">Powered by Groq · Course Content RAG</div>
 </div>
 """, unsafe_allow_html=True)
 
